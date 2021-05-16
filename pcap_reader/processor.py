@@ -30,6 +30,8 @@ class Processor:
 
     def save_files(self):
         for four_tuple, connection in self.connections.items():
+            # do last gather
+            connection.gather_last_second_stats()
             file_suffix = "_".join(four_tuple)
             from_addr = f"{four_tuple[0]}:{four_tuple[1]}"
             to_addr = f"{four_tuple[2]}:{four_tuple[3]}"
