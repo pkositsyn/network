@@ -1,6 +1,10 @@
-import dpkt
+from scapy.all import *
+from scapy.layers.inet import IP
+from scapy.layers.inet import TCP
+from scapy.layers.ppp import PPP
 
 from connection import ConnectionProcessor
+import plot_builder
 
 
 class Processor:
@@ -9,32 +13,29 @@ class Processor:
         self.connections = {}
 
     def process(self, file):
-        with open(file, 'rb') as f:
-            pcap = dpkt.pcap.Reader(f)
-            for packet_id, data in enumerate(pcap):
-                ts, buf = data
-                eth = dpkt.ethernet.Ethernet(buf)
-                ip = eth.data
-                if not isinstance(ip, dpkt.ip.IP):
-                    continue
-                self.process_packet(packet_id, ip, ts)
-
+        sniff(offline=file, prn=self.process_packet, store=0)
         self.save_files()
 
-    def process_packet(self, packet_id, ip, ts):
-        tcp = ip.data
-        if not isinstance(tcp, dpkt.tcp.TCP):
+    def process_packet(self, pack: PPP):
+        if not pack.haslayer(TCP):
             return
-        print(tcp)
-        four_tuple = (ip.src, tcp.sport, ip.dst, tcp.dport)
+        four_tuple = (pack[IP].src, str(pack[TCP].sport), pack[IP].dst, str(pack[TCP].dport))
         if four_tuple in self.connections:
             connection = self.connections[four_tuple]
         else:
-            # TODO: check SYN
-            connection = self.connections[four_tuple] = ConnectionProcessor(ts, self.bandwidth)
-        connection.process(packet_id, tcp, ts)
+            if not pack[TCP].flags.S:
+                return
+            connection = self.connections[four_tuple] = ConnectionProcessor(pack, self.bandwidth)
+        connection.process(pack)
 
     def save_files(self):
         for four_tuple, connection in self.connections.items():
-            # TODO: save png
-            pass
+            file_suffix = "_".join(four_tuple)
+            from_addr = f"{four_tuple[0]}:{four_tuple[1]}"
+            to_addr = f"{four_tuple[2]}:{four_tuple[3]}"
+            with open(f"retransmits_{file_suffix}.txt", "w") as out:
+                out.write(",".join(connection.retransmits_ids))
+            plot_builder.build_and_save_plot(f"retransmits_{file_suffix}.png", connection.retransmits_ratio,
+                                             "Retransmits ratio", from_addr, to_addr)
+            plot_builder.build_and_save_plot(f"utilization_{file_suffix}.png", connection.utilization,
+                                             "Utilization", from_addr, to_addr)

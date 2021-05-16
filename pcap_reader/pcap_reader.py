@@ -1,7 +1,5 @@
 import argparse
 
-import dpkt
-
 from processor import Processor
 
 
